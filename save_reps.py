@@ -10,6 +10,7 @@ from datasets import load_dataset
 import pandas as pd
 import torch
 from transformers import GPT2Tokenizer, GPT2Model
+import os
 import logging
 # Set up logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,7 +50,7 @@ tokenized_tweets_safe = tokenizer(train_df_safe['tweet'].tolist(),
                              max_length=max_length,
                              return_tensors='pt')
 
-tokenized_tweets_unsafe = tokenizer(train_df_safe['tweet'].tolist(),
+tokenized_tweets_unsafe = tokenizer(train_df_unsafe['tweet'].tolist(),
                              padding=True,
                              truncation=True,
                              max_length=max_length,
@@ -61,23 +62,47 @@ logging.info(f"Device is {device}")
 
 model = GPT2Model.from_pretrained(model_name).to(device)
 
+# Wrap model with DataParallel if multiple GPUs are available
+if torch.cuda.device_count() > 1:
+    model = torch.nn.DataParallel(model)
+    model.to(device)
+    num_gpus_used = torch.cuda.device_count()
+else:
+    model.to(device)
+    num_gpus_used = 1  # Only one GPU is used if DataParallel is not applied
+
+# Log the number of GPUs being used
+logging.info(f"Using {num_gpus_used} GPU(s) for model parallelism.")
+
 # Tokenization and batch size
 batch_size = 32  # Adjust batch size based on available GPU memory
 
-# Function to process tweets in batches
+# Function to process tweets in batches and get embeddings from all layers
 def get_gpt2_embeddings_in_batches(tokenized_tweets, batch_size, model, device):
-    embeddings_list = []
+    embeddings_by_layer = []
+
     for i in range(0, len(tokenized_tweets['input_ids']), batch_size):
-        logging.info(f"Iteration {i}")
+        logging.info(f"Processing batch starting at index {i}")
         input_ids_batch = tokenized_tweets['input_ids'][i:i+batch_size].to(device)
         attention_mask_batch = tokenized_tweets['attention_mask'][i:i+batch_size].to(device)
 
         with torch.no_grad():
-            outputs = model(input_ids=input_ids_batch, attention_mask=attention_mask_batch)
-            embeddings_batch = outputs.last_hidden_state.cpu() # Move to CPU
-            embeddings_list.append(embeddings_batch)
+            # Get outputs from all layers by setting output_hidden_states=True
+            outputs = model(input_ids=input_ids_batch, attention_mask=attention_mask_batch, output_hidden_states=True)
+            hidden_states = outputs.hidden_states  # Tuple of embeddings from each layer
 
-    return torch.cat(embeddings_list, dim=0)  # Concatenate all batches into a single tensor
+            # Initialize a list for storing each layer's embeddings, only on the first batch
+            if not embeddings_by_layer:
+                embeddings_by_layer = [[] for _ in range(len(hidden_states))]
+
+            # Move each layer's embeddings to CPU and store them
+            for layer_idx, layer_embeddings in enumerate(hidden_states):
+                embeddings_by_layer[layer_idx].append(layer_embeddings.cpu())
+
+    # Concatenate all batches for each layer
+    all_embeddings_by_layer = [torch.cat(layer, dim=0) for layer in embeddings_by_layer]
+
+    return all_embeddings_by_layer  # List of tensors, one per layer
 
 # Process the safe and unsafe datasets in smaller batches
 logging.info("Processing safe data")
@@ -86,6 +111,37 @@ embeddings_safe = get_gpt2_embeddings_in_batches(tokenized_tweets_safe, batch_si
 logging.info("Processing unsafe data")
 embeddings_unsafe = get_gpt2_embeddings_in_batches(tokenized_tweets_unsafe, batch_size, model, device)
 
-# Save the embeddings as Torch tensors
-torch.save(embeddings_safe, f'embeddings_data/{model_name}_embeddings_safe.pt')
-torch.save(embeddings_unsafe, f'embeddings_data/{model_name}_embeddings_unsafe.pt')
+# Create directory for embeddings if it doesn’t exist
+os.makedirs('embeddings_data', exist_ok=True)
+
+# Save the embeddings for each layer separately
+for layer_idx, layer_embeddings in enumerate(embeddings_safe):
+    torch.save(layer_embeddings, f'embeddings_data/{model_name}_embeddings_safe_layer{layer_idx}.pt')
+for layer_idx, layer_embeddings in enumerate(embeddings_unsafe):
+    torch.save(layer_embeddings, f'embeddings_data/{model_name}_embeddings_unsafe_layer{layer_idx}.pt')
+
+# # Function to process tweets in batches
+# def get_gpt2_embeddings_in_batches(tokenized_tweets, batch_size, model, device):
+#     embeddings_list = []
+#     for i in range(0, len(tokenized_tweets['input_ids']), batch_size):
+#         logging.info(f"Iteration {i}")
+#         input_ids_batch = tokenized_tweets['input_ids'][i:i+batch_size].to(device)
+#         attention_mask_batch = tokenized_tweets['attention_mask'][i:i+batch_size].to(device)
+
+#         with torch.no_grad():
+#             outputs = model(input_ids=input_ids_batch, attention_mask=attention_mask_batch)
+#             embeddings_batch = outputs.last_hidden_state.cpu() # Move to CPU
+#             embeddings_list.append(embeddings_batch)
+
+#     return torch.cat(embeddings_list, dim=0)  # Concatenate all batches into a single tensor
+
+# # Process the safe and unsafe datasets in smaller batches
+# logging.info("Processing safe data")
+# embeddings_safe = get_gpt2_embeddings_in_batches(tokenized_tweets_safe, batch_size, model, device)
+
+# logging.info("Processing unsafe data")
+# embeddings_unsafe = get_gpt2_embeddings_in_batches(tokenized_tweets_unsafe, batch_size, model, device)
+
+# # Save the embeddings as Torch tensors
+# torch.save(embeddings_safe, f'embeddings_data/{model_name}_embeddings_safe.pt')
+# torch.save(embeddings_unsafe, f'embeddings_data/{model_name}_embeddings_unsafe.pt')
