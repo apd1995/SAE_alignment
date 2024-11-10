@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # Directory containing saved cosine similarity results
 input_directory = '/scratch/users/apd1995/SAE_toxicity/embeddings_data/cosine_similarity_results_equal_sample_size'
-output_directory = os.path.join(input_directory, 'cosine_similarity_plots')
+output_directory = os.path.join(input_directory, 'cosine_similarity_plots_equal_sample_size')
 os.makedirs(output_directory, exist_ok=True)
 
 # Number of layers
