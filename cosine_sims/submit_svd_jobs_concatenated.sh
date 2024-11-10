@@ -2,8 +2,8 @@
 
 # Set job parameters
 #SBATCH --job-name=svd_layer_job
-#SBATCH --output=/scratch/users/apd1995/SAE_toxicity/logs/layer_%a.out
-#SBATCH --error=/scratch/users/apd1995/SAE_toxicity/logs/layer_%a.err
+#SBATCH --output=/scratch/users/apd1995/SAE_toxicity/logs/layer_%j_%a.out
+#SBATCH --error=/scratch/users/apd1995/SAE_toxicity/logs/layer_%j_%a.err
 #SBATCH --array=0-23  # 24 jobs for 24 layers
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
