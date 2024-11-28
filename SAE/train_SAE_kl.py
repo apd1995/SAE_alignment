@@ -33,10 +33,10 @@ config_dict={
     "batch_size": 64,
     "epochs": 1000,
     "save_interval": 50,
-    "hidden_size": 128,
+    "hidden_size": 2,
     "lambda_recon": 0.5,
     "lambda_energy": 0.5,
-    "beta": 3,
+    "lambda_sparsity": 0,
     "sparsity_param": 0.05,
     "sparsity_loss": "kl"
 }
@@ -60,12 +60,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define the Sparse Autoencoder
 class SparseAutoencoder(nn.Module):
-    def __init__(self, input_size, hidden_size, sparsity_param, beta):
+    def __init__(self, input_size, hidden_size, sparsity_param, lambda_sparsity):
         super(SparseAutoencoder, self).__init__()
         self.encoder = nn.Linear(input_size, hidden_size)
         self.decoder = nn.Linear(hidden_size, input_size)
         self.sparsity_param = sparsity_param  # Target sparsity (e.g., 0.05)
-        self.beta = beta  # Regularization strength for sparsity
+        self.lambda_sparsity = lambda_sparsity  # Regularization strength for sparsity
 
     def forward(self, x):
         z = torch.sigmoid(self.encoder(x))  # Latent space
@@ -118,17 +118,17 @@ unsafe_embeddings = torch.mean(unsafe_embeddings, dim = 1)
 input_size = safe_embeddings.shape[1]
 hidden_size = config.hidden_size
 sparsity_param = config.sparsity_param
-beta = config.beta
 learning_rate = config.learning_rate
 batch_size = config.batch_size
 epochs = config.epochs
 save_interval = config.save_interval
 lambda_recon = config.lambda_recon
 lambda_energy = config.lambda_energy
+lambda_sparsity = config.lambda_sparsity
 
 # Create the model
 model = SparseAutoencoder(input_size=input_size, hidden_size=hidden_size, 
-                          sparsity_param=sparsity_param, beta=beta).to(device)
+                          sparsity_param=sparsity_param, lambda_sparsity=lambda_sparsity).to(device)
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 reconstruction_loss_fn = nn.MSELoss()
 
@@ -167,7 +167,7 @@ for epoch in range(epochs):
         sparsity_loss = model.kl_divergence(z_unsafe)
 
         # Total loss
-        loss = lambda_recon * recon_loss + lambda_energy * energy_dist_loss + beta * sparsity_loss
+        loss = lambda_recon * recon_loss + lambda_energy * energy_dist_loss + lambda_sparsity * sparsity_loss
 
         # Backpropagation
         optimizer.zero_grad()
