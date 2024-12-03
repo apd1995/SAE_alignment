@@ -29,14 +29,14 @@ os.makedirs(checkpoint_dir, exist_ok=True)
 
 config_dict={
     "model_name": 'gpt2-medium',
-    "learning_rate": 1e-3,
+    "learning_rate": 1,
     "batch_size": 64,
-    "epochs": 1000,
+    "epochs": 2000,
     "save_interval": 50,
     "hidden_size": 2,
     "lambda_recon": 0.5,
     "lambda_energy": 0.5,
-    "lambda_sparsity": 0,
+    "lambda_sparsity": 0.5,
     "sparsity_param": 0.05,
     "sparsity_loss": "kl"
 }
@@ -47,7 +47,7 @@ with open(config_file_path, 'w') as f:
     json.dump(config_dict, f, indent=4)
     
 # Initialize Weights and Biases project
-wandb.init(project="SAE_toxicity", config=config_dict, entity="apd_stats", resume="allow")
+wandb.init(project="SAE_toxicity", config=config_dict, entity="SAE_alignment", resume="allow")
 
 # Get the config parameters from wandb
 config = wandb.config
@@ -74,8 +74,8 @@ class SparseAutoencoder(nn.Module):
 
     def kl_divergence(self, z):
         rho_hat = torch.mean(z, dim=0)  # Average activation of hidden neurons
-        kl_loss = self.sparsity_param * torch.log(self.sparsity_param / rho_hat) + \
-                  (1 - self.sparsity_param) * torch.log((1 - self.sparsity_param) / (1 - rho_hat))
+        kl_loss = self.sparsity_param * torch.log(self.sparsity_param / torch.clamp(rho_hat, min=1e-10)) + \
+                  (1 - self.sparsity_param) * torch.log((1 - self.sparsity_param) / torch.clamp(1 - rho_hat, min=1e-10))
         return kl_loss.sum()
 
 # Energy Distance calculation
@@ -109,10 +109,10 @@ def create_dataloaders(safe_embeddings, unsafe_embeddings, batch_size):
     return safe_loader, unsafe_loader
 
 # Load embeddings from .pt files
-safe_embeddings = torch.load(f'embeddings_data/{model_name}_embeddings_safe.pt', weights_only = True)
-safe_embeddings = torch.mean(safe_embeddings, dim = 1)
-unsafe_embeddings = torch.load(f'embeddings_data/{model_name}_embeddings_unsafe.pt', weights_only = True)
-unsafe_embeddings = torch.mean(unsafe_embeddings, dim = 1)
+safe_embeddings = torch.load(f'/scratch/user/sohamghosh/SAE_toxicity/embeddings_code/embeddings_data/{model_name}_embeddings_safe_layer20.pt', weights_only = True)
+#safe_embeddings = torch.mean(safe_embeddings, dim = 1)
+unsafe_embeddings = torch.load(f'/scratch/user/sohamghosh/SAE_toxicity/embeddings_code/embeddings_data/{model_name}_embeddings_unsafe_layer20.pt', weights_only = True)
+#unsafe_embeddings = torch.mean(unsafe_embeddings, dim = 1)
 
 # Hyperparameters from wandb
 input_size = safe_embeddings.shape[1]
@@ -130,6 +130,7 @@ lambda_sparsity = config.lambda_sparsity
 model = SparseAutoencoder(input_size=input_size, hidden_size=hidden_size, 
                           sparsity_param=sparsity_param, lambda_sparsity=lambda_sparsity).to(device)
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+#optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
 reconstruction_loss_fn = nn.MSELoss()
 
 # Create DataLoaders
