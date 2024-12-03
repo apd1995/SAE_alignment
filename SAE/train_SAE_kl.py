@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 import os
 from datetime import datetime
 import json
+import argparse
 
 # Create a folder with the current datetime as the name
 datetime_folder = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -27,19 +28,18 @@ checkpoint_dir = os.path.join('checkpoints', datetime_folder)
 # Ensure the checkpoint folder exists
 os.makedirs(checkpoint_dir, exist_ok=True)
 
-config_dict={
-    "model_name": 'gpt2-medium',
-    "learning_rate": 1,
-    "batch_size": 64,
-    "epochs": 2000,
-    "save_interval": 50,
-    "hidden_size": 2,
-    "lambda_recon": 0.5,
-    "lambda_energy": 0.5,
-    "lambda_sparsity": 0.5,
-    "sparsity_param": 0.05,
-    "sparsity_loss": "kl"
-}
+# Add this at the top of your script
+parser = argparse.ArgumentParser(description="Sparse Autoencoder Training")
+parser.add_argument('--config', type=str, required=True, help='Path to the config file')
+args = parser.parse_args()
+
+# Load the configuration file
+with open(args.config, 'r') as f:
+    config_dict = json.load(f)
+
+# Use `config_dict` directly for hyperparameters
+config = config_dict
+
 
 # Save the configuration to a JSON file in the checkpoint directory
 config_file_path = os.path.join(checkpoint_dir, 'config.json')
@@ -109,10 +109,10 @@ def create_dataloaders(safe_embeddings, unsafe_embeddings, batch_size):
     return safe_loader, unsafe_loader
 
 # Load embeddings from .pt files
-safe_embeddings = torch.load(f'/scratch/user/sohamghosh/SAE_toxicity/embeddings_code/embeddings_data/{model_name}_embeddings_safe_layer20.pt', weights_only = True)
-#safe_embeddings = torch.mean(safe_embeddings, dim = 1)
-unsafe_embeddings = torch.load(f'/scratch/user/sohamghosh/SAE_toxicity/embeddings_code/embeddings_data/{model_name}_embeddings_unsafe_layer20.pt', weights_only = True)
-#unsafe_embeddings = torch.mean(unsafe_embeddings, dim = 1)
+safe_embeddings = torch.load(f'/scratch/users/apratimdey/SAE_toxicity/embeddings_data/{model_name}_embeddings_safe_layer18.pt', weights_only = True)
+safe_embeddings = torch.mean(safe_embeddings, dim = 1)
+unsafe_embeddings = torch.load(f'/scratch/users/apratimdey/SAE_toxicity/embeddings_data/{model_name}_embeddings_unsafe_layer18.pt', weights_only = True)
+unsafe_embeddings = torch.mean(unsafe_embeddings, dim = 1)
 
 # Hyperparameters from wandb
 input_size = safe_embeddings.shape[1]
